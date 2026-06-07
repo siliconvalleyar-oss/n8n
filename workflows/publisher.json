@@ -1,0 +1,162 @@
+{
+  "name": "Publisher",
+  "nodes": [
+    {
+      "id": "wf-trigger",
+      "name": "Workflow Trigger",
+      "type": "n8n-nodes-base.workflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "parameters": {}
+    },
+    {
+      "id": "parse-pub-params",
+      "name": "Parse Publish Params",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [380, 300],
+      "parameters": {
+        "jsCode": "const p = $json;\nreturn {\n  jobId: p.jobId,\n  outputPath: p.outputPath,\n  title: p.title || p.hook || 'TikTok Video',\n  description: p.description || '',\n  tags: p.tags || (p.topic ? [p.topic, 'fyp', 'viral'] : ['fyp', 'viral']),\n  channels: p.channels || ['local'],\n  metadata: p.metadata || {},\n  processedAt: p.processedAt || new Date().toISOString()\n};"
+      }
+    },
+    {
+      "id": "branch-by-channel",
+      "name": "Select Channels",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [580, 300],
+      "parameters": {
+        "dataType": "string",
+        "fieldName": "channels",
+        "switch": {
+          "values": [
+            { "value": "local" },
+            { "value": "tiktok" },
+            { "value": "all" }
+          ]
+        },
+        "fallbackOutput": ""
+      }
+    },
+    {
+      "id": "save-local",
+      "name": "Save Locally",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 160],
+      "parameters": {
+        "method": "POST",
+        "url": "http://ffmpeg-api:3000/shell",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "command", "value": "=ls -la \"{{ $json.outputPath }}\" && echo \"done\"" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "publish-tiktok",
+      "name": "Publish to TikTok API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 340],
+      "parameters": {
+        "method": "POST",
+        "url": "https://open-api.tiktok.com/video/upload/",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearer",
+        "nodeCredential": "={{ $env.TIKTOK_ACCESS_TOKEN }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "access_token", "value": "={{ $env.TIKTOK_ACCESS_TOKEN }}" },
+            { "name": "open_id", "value": "={{ $env.TIKTOK_OPEN_API_KEY }}" },
+            { "name": "video", "value": "={{ $json.outputPath }}" },
+            { "name": "description", "value": "={{ $json.title + ' ' + $json.tags.map(t => '#' + t).join(' ') }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "notify-slack",
+      "name": "Send Slack Notification",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [780, 520],
+      "parameters": {
+        "channel": "={{ $env.SLACK_CHANNEL || '#video-pipeline' }}",
+        "text": "=🎬 *New TikTok Video Published*\\n*Title:* {{ $json.title }}\\n*File:* `{{ $json.outputPath }}`\\n*Tags:* {{ $json.tags.join(', ') }}\\n*Processed:* {{ $json.processedAt }}",
+        "otherOptions": {}
+      }
+    },
+    {
+      "id": "notify-discord",
+      "name": "Send Discord Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 680],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "=**TikTok Video Published**\n**Title:** {{ $json.title }}\n**Output:** {{ $json.outputPath }}\n**Tags:** {{ $json.tags.join(', ') }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "generate-report",
+      "name": "Generate Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [780, 840],
+      "parameters": {
+        "jsCode": "return {\n  jobId: $json.jobId,\n  outputPath: $json.outputPath,\n  title: $json.title,\n  tags: $json.tags,\n  channels: $json.channels,\n  publishedAt: new Date().toISOString(),\n  status: 'published'\n};"
+      }
+    }
+  ],
+  "connections": {
+    "Workflow Trigger": {
+      "main": [[{ "node": "Parse Publish Params", "type": "main", "index": 0 }]]
+    },
+    "Parse Publish Params": {
+      "main": [[{ "node": "Select Channels", "type": "main", "index": 0 }]]
+    },
+    "Select Channels": {
+      "main": [
+        [{ "node": "Save Locally", "type": "main", "index": 0 }],
+        [{ "node": "Publish to TikTok API", "type": "main", "index": 0 }],
+        [{ "node": "Save Locally", "type": "main", "index": 0 }]
+      ]
+    },
+    "Publish to TikTok API": {
+      "main": [[{ "node": "Send Slack Notification", "type": "main", "index": 0 }]]
+    },
+    "Save Locally": {
+      "main": [[{ "node": "Publish to TikTok API", "type": "main", "index": 0 }]]
+    },
+    "Send Slack Notification": {
+      "main": [[{ "node": "Send Discord Notification", "type": "main", "index": 0 }]]
+    },
+    "Send Discord Notification": {
+      "main": [[{ "node": "Generate Report", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["publish", "tiktok", "notification"],
+  "active": false
+}

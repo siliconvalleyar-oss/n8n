@@ -1,0 +1,72 @@
+{
+  "video": {
+    "tiktok": {
+      "width": 1080,
+      "height": 1920,
+      "fps": 30,
+      "maxDuration": 60,
+      "optimalDuration": 21,
+      "bitrate": "4000k",
+      "codec": "libx264",
+      "audioCodec": "aac",
+      "sampleRate": 44100,
+      "pixelFormat": "yuv420p",
+      "profile": "high",
+      "level": "4.2",
+      "crf": 23
+    },
+    "reels": {
+      "width": 1080,
+      "height": 1920,
+      "fps": 30,
+      "maxDuration": 90,
+      "bitrate": "5000k"
+    },
+    "shorts": {
+      "width": 1080,
+      "height": 1920,
+      "fps": 30,
+      "maxDuration": 60,
+      "bitrate": "3000k"
+    }
+  },
+  "audio": {
+    "normalization": {
+      "loudnormI": -14,
+      "loudnormLRA": 1,
+      "loudnormTP": -1
+    },
+    "fadeInDuration": 0.5,
+    "fadeOutDuration": 0.5,
+    "backgroundMusicVolume": 0.15
+  },
+  "captions": {
+    "enabled": true,
+    "style": "typewriter",
+    "fontSize": 48,
+    "fontColor": "white",
+    "borderColor": "black",
+    "borderWidth": 2,
+    "position": "bottom_center",
+    "maxLines": 2,
+    "maxCharsPerLine": 36
+  },
+  "watermark": {
+    "enabled": true,
+    "position": "top_right",
+    "opacity": 0.7,
+    "scale": 0.1
+  },
+  "content": {
+    "sources": {
+      "reddit": { "enabled": false, "subreddits": [] },
+      "twitter": { "enabled": false },
+      "youtube": { "enabled": false },
+      "rss": { "enabled": false, "feeds": [] }
+    },
+    "trends": {
+      "scanIntervalHours": 6,
+      "maxTrends": 10
+    }
+  }
+}

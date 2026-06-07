@@ -1,0 +1,96 @@
+{
+  "name": "Video Processor",
+  "nodes": [
+    {
+      "id": "wf-trigger",
+      "name": "Workflow Trigger",
+      "type": "n8n-nodes-base.workflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "parameters": {}
+    },
+    {
+      "id": "call-pipeline",
+      "name": "Call FFmpeg Pipeline API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [400, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://ffmpeg-api:3000/tiktok-pipeline",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "jobId", "value": "={{ $json.jobId }}" },
+            { "name": "inputPath", "value": "={{ $json.inputPath }}" },
+            { "name": "outputPath", "value": "={{ $json.outputPath }}" },
+            { "name": "targetDuration", "value": "={{ $json.targetDuration }}" },
+            { "name": "includeCaptions", "value": "={{ $json.includeCaptions }}" },
+            { "name": "includeWatermark", "value": "={{ $json.includeWatermark }}" },
+            { "name": "backgroundMusic", "value": "={{ $json.backgroundMusic }}" },
+            { "name": "speed", "value": "={{ $json.speed }}" },
+            { "name": "script", "value": "={{ $json.script }}" },
+            { "name": "style", "value": "={{ $json.style }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "check-result",
+      "name": "Pipeline Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [600, 300],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            { "value1": "={{ $json.success }}", "operation": "equal", "value2": true }
+          ]
+        }
+      }
+    },
+    {
+      "id": "return-success",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 200],
+      "parameters": {
+        "jsCode": "return {\n  success: true,\n  jobId: $json.jobId,\n  outputPath: $json.outputPath,\n  duration: $json.duration,\n  sizeBytes: $json.sizeBytes,\n  style: $json.style,\n  captions: $json.includeCaptions,\n  watermark: $json.includeWatermark,\n  backgroundMusic: $json.backgroundMusic,\n  processedAt: new Date().toISOString()\n};"
+      }
+    },
+    {
+      "id": "return-error",
+      "name": "Return Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 400],
+      "parameters": {
+        "jsCode": "return {\n  success: false,\n  jobId: $json.jobId,\n  error: $json.error,\n  processedAt: new Date().toISOString()\n};"
+      }
+    }
+  ],
+  "connections": {
+    "Workflow Trigger": {
+      "main": [[{ "node": "Call FFmpeg Pipeline API", "type": "main", "index": 0 }]]
+    },
+    "Call FFmpeg Pipeline API": {
+      "main": [[{ "node": "Pipeline Success?", "type": "main", "index": 0 }]]
+    },
+    "Pipeline Success?": {
+      "main": [
+        [{ "node": "Return Result", "type": "main", "index": 0 }],
+        [{ "node": "Return Error", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["video", "ffmpeg", "processor"],
+  "active": false
+}

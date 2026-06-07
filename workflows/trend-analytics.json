@@ -1,0 +1,93 @@
+{
+  "name": "Trend Analytics",
+  "nodes": [
+    {
+      "id": "schedule",
+      "name": "Schedule (Every 6h)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 */6 * * *" }]
+        }
+      }
+    },
+    {
+      "id": "fetch-trends",
+      "name": "Fetch Trending Hashtags",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [400, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.reddit.com/r/TikTokTrends/hot.json?limit=25",
+        "options": {
+          "headers": {
+            "User-Agent": "n8n-trend-bot/1.0"
+          }
+        }
+      }
+    },
+    {
+      "id": "parse-trends",
+      "name": "Parse & Score Trends",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 300],
+      "parameters": {
+        "jsCode": "const posts = $json.data?.children || [];\n\nconst trends = posts.map(post => {\n  const d = post.data;\n  const title = d.title || '';\n  const selftext = d.selftext || '';\n  const combined = title + ' ' + selftext;\n\n  // Extract hashtags\n  const hashtags = (combined.match(/#[\\w]+/g) || []).slice(0, 5);\n\n  // Score by engagement\n  const score = (d.score || 0) + (d.num_comments || 0) * 2;\n\n  return {\n    hashtag: hashtags[0] || '',\n    title,\n    score,\n    upvotes: d.score || 0,\n    comments: d.num_comments || 0,\n    subreddit: d.subreddit,\n    url: 'https://reddit.com' + d.permalink,\n    allHashtags: hashtags\n  };\n})\n.filter(t => t.score > 10)\n.sort((a, b) => b.score - a.score)\n.slice(0, 10);\n\nreturn trends;"
+      }
+    },
+    {
+      "id": "save-trends",
+      "name": "Save Trends to File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [800, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://ffmpeg-api:3000/shell",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "command", "value": "=echo '{{ JSON.stringify($json) }}' > '/storage/assets/trends_$(date +%Y%m%d_%H%M%S).json'" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "notify-trends",
+      "name": "Notify of Trending Topics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300],
+      "parameters": {
+        "jsCode": "const trends = Array.isArray($json) ? $json : [$json];\nconst top = trends.slice(0, 3);\n\nreturn {\n  type: 'trend_update',\n  scannedAt: new Date().toISOString(),\n  topTrends: top.map(t => ({\n    hashtag: t.hashtag,\n    title: t.title,\n    score: t.score\n  })),\n  totalTrends: trends.length,\n  trends\n};"
+      }
+    }
+  ],
+  "connections": {
+    "Schedule (Every 6h)": {
+      "main": [[{ "node": "Fetch Trending Hashtags", "type": "main", "index": 0 }]]
+    },
+    "Fetch Trending Hashtags": {
+      "main": [[{ "node": "Parse & Score Trends", "type": "main", "index": 0 }]]
+    },
+    "Parse & Score Trends": {
+      "main": [[{ "node": "Save Trends to File", "type": "main", "index": 0 }]]
+    },
+    "Save Trends to File": {
+      "main": [[{ "node": "Notify of Trending Topics", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "timezone": "America/New_York",
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["trends", "analytics", "tiktok"],
+  "active": false
+}

@@ -1,0 +1,77 @@
+{
+  "name": "Error Handler",
+  "nodes": [
+    {
+      "id": "wf-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.workflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "parameters": {}
+    },
+    {
+      "id": "parse-error",
+      "name": "Parse Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 300],
+      "parameters": {
+        "jsCode": "const err = $json;\nreturn {\n  workflowId: err.workflowId || 'unknown',\n  workflowName: err.workflowName || 'unknown',\n  executionId: err.executionId || 'unknown',\n  errorMessage: err.errorMessage || err.message || 'No error message',\n  nodeName: err.nodeName || 'unknown',\n  timeStamp: new Date().toISOString(),\n  jobId: err.jobId || 'unknown'\n};"
+      }
+    },
+    {
+      "id": "log-error",
+      "name": "Log Error via API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [600, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://ffmpeg-api:3000/shell",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "command", "value": "=echo '[{{ $json.timeStamp }}] [{{ $json.workflowName }}] {{ $json.errorMessage }}' >> '/storage/output/errors.log'" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "cleanup",
+      "name": "Cleanup Artifacts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [600, 460],
+      "parameters": {
+        "method": "POST",
+        "url": "http://ffmpeg-api:3000/shell",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "command", "value": "=rm -f /tmp/{{ $json.jobId }}_*.mp4 /tmp/{{ $json.jobId }}_*.srt 2>/dev/null; echo 'cleaned up {{ $json.jobId }}'" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "done",
+      "name": "Done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [600, 620],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Error Trigger": { "main": [[{ "node": "Parse Error", "type": "main", "index": 0 }]] },
+    "Parse Error": { "main": [[{ "node": "Log Error via API", "type": "main", "index": 0 }]] },
+    "Log Error via API": { "main": [[{ "node": "Cleanup Artifacts", "type": "main", "index": 0 }]] },
+    "Cleanup Artifacts": { "main": [[{ "node": "Done", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "timezone": "UTC", "callerPolicy": "all", "executionOrder": "v1" },
+  "staticData": null,
+  "tags": ["error", "monitoring"],
+  "active": false
+}

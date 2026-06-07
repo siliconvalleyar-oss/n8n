@@ -1,0 +1,6 @@
+.env
+storage/
+node_modules/
+exports/
+backups/
+/tmp/

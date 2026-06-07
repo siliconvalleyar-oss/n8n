@@ -1,0 +1,86 @@
+version: "3.8"
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n-video-editor
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=${N8N_PORT:-5678}
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - DB_TYPE=sqlite
+      - DB_SQLITE_DATABASE=/home/node/.n8n/database.sqlite
+      - EXECUTIONS_DATA_PRUNE=${EXECUTIONS_DATA_PRUNE:-true}
+      - EXECUTIONS_DATA_MAX_AGE=${EXECUTIONS_DATA_MAX_AGE:-168}
+      - N8N_METRICS=${N8N_METRICS:-false}
+      - N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN=true
+      - N8N_PAYLOAD_SIZE_MAX=${N8N_PAYLOAD_SIZE_MAX:-256}
+      - EXTERNAL_FRONTEND_HOOKS_URLS=${EXTERNAL_FRONTEND_HOOKS_URLS:-}
+      - N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./config:/home/node/.n8n/config:ro
+      - ${VIDEO_STORAGE:-./storage/videos}:/storage/videos
+      - ${ASSET_STORAGE:-./storage/assets}:/storage/assets
+      - ${OUTPUT_STORAGE:-./storage/output}:/storage/output
+    depends_on:
+      - redis
+    networks:
+      - n8n-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  redis:
+    image: redis:7-alpine
+    container_name: n8n-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - n8n-net
+    command: redis-server --appendonly yes --loglevel warning
+
+  ffmpeg-api:
+    build: ./ffmpeg-api
+    container_name: n8n-ffmpeg-api
+    restart: unless-stopped
+    ports:
+      - "${FFMPEG_API_PORT:-3000}:3000"
+    volumes:
+      - ${VIDEO_STORAGE:-./storage/videos}:/storage/videos
+      - ${ASSET_STORAGE:-./storage/assets}:/storage/assets
+      - ${OUTPUT_STORAGE:-./storage/output}:/storage/output
+      - /tmp:/tmp
+    networks:
+      - n8n-net
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: n8n-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=${WATCHTOWER_POLL_INTERVAL:-86400}
+    command: n8n-video-editor
+    networks:
+      - n8n-net
+    profiles:
+      - monitoring
+
+volumes:
+  n8n_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  n8n-net:
+    driver: bridge

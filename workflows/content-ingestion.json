@@ -1,0 +1,165 @@
+{
+  "name": "Content Ingestion",
+  "nodes": [
+    {
+      "id": "trigger-source",
+      "name": "Trigger",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "parameters": {
+        "dataType": "string",
+        "fieldName": "source",
+        "switch": {
+          "values": [
+            { "value": "rss" },
+            { "value": "reddit" },
+            { "value": "webhook" }
+          ]
+        },
+        "fallbackOutput": ""
+      }
+    },
+    {
+      "id": "rss-trigger",
+      "name": "RSS Feed Trigger",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [50, 80],
+      "parameters": {
+        "url": "={{ $env.RSS_FEED_URL || 'https://example.com/feed.xml' }}"
+      }
+    },
+    {
+      "id": "webhook-ingest",
+      "name": "Webhook (Manual/API Input)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [50, 300],
+      "parameters": {
+        "path": "ingest-video",
+        "httpMethod": "POST",
+        "options": { "rawBody": true }
+      }
+    },
+    {
+      "id": "reddit-fetch",
+      "name": "Fetch Reddit Hot Posts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [50, 500],
+      "parameters": {
+        "method": "GET",
+        "url": "=https://www.reddit.com/r/{{ $env.REDDIT_SUBREDDIT || 'funny' }}/hot.json?limit=10",
+        "options": {
+          "headers": { "User-Agent": "n8n-tiktok-bot/1.0" }
+        }
+      }
+    },
+    {
+      "id": "normalize-source",
+      "name": "Normalize to Standard Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 300],
+      "parameters": {
+        "jsCode": "const input = $json;\nconst source = $node.Trigger.source;\nlet items = [];\nswitch (source) {\n  case 'rss':\n    items = input.map(item => ({\n      source: 'rss', title: item.title,\n      description: item.content || item.description || '',\n      videoUrl: item.enclosure?.url || item.link || '',\n      thumbnail: item.image || item.thumbnail || '',\n      publishedAt: item.pubDate || item.isoDate,\n      url: item.link,\n      topic: guessTopic(item.title + ' ' + (item.description || ''))\n    }));\n    break;\n  case 'reddit':\n    const children = input.data?.children || [];\n    items = children.filter(c => c.kind === 't3').map(c => ({\n      source: 'reddit', title: c.data.title,\n      selftext: c.data.selftext || '',\n      videoUrl: c.data.url || '',\n      thumbnail: c.data.thumbnail || '',\n      score: c.data.score, subreddit: c.data.subreddit,\n      url: 'https://reddit.com' + c.data.permalink,\n      topic: guessTopic(c.data.title + ' ' + (c.data.selftext || ''))\n    }));\n    break;\n  case 'webhook':\n    items = [{\n      source: 'webhook', title: input.title || 'Manual Input',\n      script: input.script || '', videoUrl: input.videoUrl || '',\n      assetUrls: input.assetUrls || [],\n      topic: input.topic || 'general', style: input.style || 'standard',\n      backgroundMusic: input.backgroundMusic || ''\n    }];\n    break;\n  default:\n    items = [input];\n}\nfunction guessTopic(text) {\n  const t = text.toLowerCase();\n  if (/learn|how.to|tutorial|explain|science|fact/i.test(t)) return 'educational';\n  if (/funny|meme|joke|lol|comedy/i.test(t)) return 'funny';\n  if (/satisfying|asmr|relax|calm/i.test(t)) return 'asmr';\n  if (/recipe|cook|food/i.test(t)) return 'food';\n  if (/fitness|gym|workout/i.test(t)) return 'fitness';\n  if (/travel|wander|nature|beautiful/i.test(t)) return 'travel';\n  return 'standard';\n}\nreturn items;"
+      }
+    },
+    {
+      "id": "filter-content",
+      "name": "Filter & Score Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 300],
+      "parameters": {
+        "jsCode": "const items = Array.isArray($json) ? $json : [$json];\nconst scored = items.map(item => {\n  let score = 50;\n  if (item.videoUrl) score += 25;\n  if (item.script || item.selftext || item.description) score += 15;\n  if (item.score && item.score > 100) score += 10;\n  if (item.score && item.score > 1000) score += 10;\n  return { ...item, score, tiktokReady: score >= 60 };\n});\nscored.sort((a, b) => b.score - a.score);\nreturn scored.filter(item => item.tiktokReady).slice(0, 5);"
+      }
+    },
+    {
+      "id": "download-video",
+      "name": "Download Video via API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [800, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://ffmpeg-api:3000/download",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "url", "value": "={{ $json.videoUrl }}" },
+            { "name": "output", "value": "=/storage/videos/{{ $json.source }}_{{ Date.now() }}.mp4" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "queue-job",
+      "name": "Queue for Orchestrator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 300],
+      "parameters": {
+        "jsCode": "return {\n  triggerSource: 'webhook',\n  source: $json.source,\n  videoUrl: $json.videoUrl,\n  script: $json.script || $json.selftext || $json.description || '',\n  topic: $json.topic || 'general',\n  style: $json.style || $json.topic || 'standard',\n  targetDuration: 30,\n  includeCaptions: true,\n  includeWatermark: true,\n  backgroundMusic: $json.backgroundMusic || 'trending',\n  metadata: {\n    originalUrl: $json.url,\n    score: $json.score,\n    source: $json.source\n  }\n};"
+      }
+    },
+    {
+      "id": "call-orchestrator",
+      "name": "Send to Orchestrator",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1200, 300],
+      "parameters": {
+        "workflowId": 1, "workflowType": "new",
+        "workflowParameters": {
+          "parameters": {
+            "values": [
+              { "name": "triggerSource", "value": "={{ $json.triggerSource }}" },
+              { "name": "videoUrl", "value": "={{ $json.videoUrl }}" },
+              { "name": "script", "value": "={{ $json.script }}" },
+              { "name": "style", "value": "={{ $json.style }}" },
+              { "name": "targetDuration", "value": "={{ $json.targetDuration }}" },
+              { "name": "includeCaptions", "value": "={{ $json.includeCaptions }}" },
+              { "name": "includeWatermark", "value": "={{ $json.includeWatermark }}" },
+              { "name": "backgroundMusic", "value": "={{ $json.backgroundMusic }}" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "done",
+      "name": "Done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1400, 300],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Trigger": {
+      "main": [
+        [{ "node": "RSS Feed Trigger", "type": "main", "index": 0 }],
+        [{ "node": "Fetch Reddit Hot Posts", "type": "main", "index": 0 }],
+        [{ "node": "Webhook (Manual/API Input)", "type": "main", "index": 0 }],
+        [{ "node": "Normalize to Standard Format", "type": "main", "index": 0 }]
+      ]
+    },
+    "RSS Feed Trigger": { "main": [[{ "node": "Normalize to Standard Format", "type": "main", "index": 0 }]] },
+    "Fetch Reddit Hot Posts": { "main": [[{ "node": "Normalize to Standard Format", "type": "main", "index": 0 }]] },
+    "Webhook (Manual/API Input)": { "main": [[{ "node": "Normalize to Standard Format", "type": "main", "index": 0 }]] },
+    "Normalize to Standard Format": { "main": [[{ "node": "Filter & Score Content", "type": "main", "index": 0 }]] },
+    "Filter & Score Content": { "main": [[{ "node": "Download Video via API", "type": "main", "index": 0 }]] },
+    "Download Video via API": { "main": [[{ "node": "Queue for Orchestrator", "type": "main", "index": 0 }]] },
+    "Queue for Orchestrator": { "main": [[{ "node": "Send to Orchestrator", "type": "main", "index": 0 }]] },
+    "Send to Orchestrator": { "main": [[{ "node": "Done", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "timezone": "UTC", "callerPolicy": "workflowsFromSameOwner", "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["ingestion", "content"],
+  "active": false
+}

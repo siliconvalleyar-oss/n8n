@@ -1,0 +1,107 @@
+{
+  "name": "Caption Generator",
+  "nodes": [
+    {
+      "id": "wf-trigger",
+      "name": "Workflow Trigger",
+      "type": "n8n-nodes-base.workflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "parameters": {}
+    },
+    {
+      "id": "choose-method",
+      "name": "Caption Method",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [400, 300],
+      "parameters": {
+        "dataType": "string",
+        "fieldName": "script",
+        "switch": {
+          "values": [
+            { "value": "" },
+            { "value": "auto" }
+          ]
+        },
+        "fallbackOutput": ""
+      }
+    },
+    {
+      "id": "auto-caption",
+      "name": "Auto-Caption via API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [600, 180],
+      "parameters": {
+        "method": "POST",
+        "url": "http://ffmpeg-api:3000/captions",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "inputPath", "value": "={{ $json.inputPath }}" },
+            { "name": "outputPath", "value": "={{ $json.outputPath }}" },
+            { "name": "script", "value": "={{ $json.script }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "script-caption",
+      "name": "Script Captions via API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [600, 420],
+      "parameters": {
+        "method": "POST",
+        "url": "http://ffmpeg-api:3000/captions",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "inputPath", "value": "={{ $json.inputPath }}" },
+            { "name": "outputPath", "value": "={{ $json.outputPath }}" },
+            { "name": "script", "value": "={{ $json.script }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "return-result",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 640],
+      "parameters": {
+        "jsCode": "return {\n  success: true,\n  jobId: $json.jobId,\n  outputPath: $json.outputPath,\n  processedAt: new Date().toISOString()\n};"
+      }
+    }
+  ],
+  "connections": {
+    "Workflow Trigger": {
+      "main": [[{ "node": "Caption Method", "type": "main", "index": 0 }]]
+    },
+    "Caption Method": {
+      "main": [
+        [{ "node": "Auto-Caption via API", "type": "main", "index": 0 }],
+        [{ "node": "Script Captions via API", "type": "main", "index": 0 }],
+        [{ "node": "Script Captions via API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Auto-Caption via API": {
+      "main": [[{ "node": "Return Result", "type": "main", "index": 0 }]]
+    },
+    "Script Captions via API": {
+      "main": [[{ "node": "Return Result", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["captions", "subtitles"],
+  "active": false
+}

@@ -1,0 +1,287 @@
+{
+  "name": "TikTok Orchestrator",
+  "nodes": [
+    {
+      "id": "trigger-options",
+      "name": "Trigger (Schedule / Webhook / Manual)",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "parameters": {
+        "dataType": "string",
+        "fieldName": "triggerSource",
+        "switch": {
+          "values": [
+            { "value": "schedule" },
+            { "value": "webhook" },
+            { "value": "manual" }
+          ]
+        },
+        "fallbackOutput": "manual"
+      }
+    },
+    {
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [50, 100],
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 */6 * * *" }]
+        }
+      }
+    },
+    {
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [50, 300],
+      "parameters": {
+        "path": "tiktok-pipeline",
+        "httpMethod": "POST",
+        "options": {
+          "rawBody": true
+        },
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [50, 500]
+    },
+    {
+      "id": "validate-payload",
+      "name": "Validate & Prepare Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 300],
+      "parameters": {
+        "jsCode": "// Validate and normalize input payload\nconst input = $json;\n\n// Default config\nconst defaults = {\n  source: input.source || 'manual',\n  videoUrl: input.videoUrl || null,\n  assetUrls: input.assetUrls || [],\n  script: input.script || '',\n  topic: input.topic || 'general',\n  hook: input.hook || '',\n  targetDuration: input.targetDuration || 30,\n  style: input.style || 'standard',  // standard, educational, funny, asmr\n  includeCaptions: input.includeCaptions ?? true,\n  includeWatermark: input.includeWatermark ?? true,\n  backgroundMusic: input.backgroundMusic || 'trending',\n  voiceover: input.voiceover || false,\n  outputFormat: input.outputFormat || 'mp4'\n};\n\n// Validation\nif (!defaults.videoUrl && !defaults.script && defaults.assetUrls.length === 0) {\n  throw new Error('Must provide videoUrl, script, or assetUrls');\n}\n\nreturn {\n  jobId: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),\n  createdAt: new Date().toISOString(),\n  ...defaults\n};"
+      }
+    },
+    {
+      "id": "check-source",
+      "name": "Check Content Source",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [600, 300],
+      "parameters": {
+        "conditions": {
+          "string": [
+            { "value1": "={{ $json.videoUrl }}", "operation": "isNotEmpty" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fetch-content",
+      "name": "Fetch Content from URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [800, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://ffmpeg-api:3000/download",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "url", "value": "={{ $json.videoUrl }}" },
+            { "name": "output", "value": "=/storage/videos/{{ $json.jobId }}_input.mp4" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "sub-orchestrator",
+      "name": "Execute Sub-Pipeline",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [800, 400],
+      "parameters": {
+        "dataType": "string",
+        "fieldName": "style",
+        "switch": {
+          "values": [
+            { "value": "standard" },
+            { "value": "educational" },
+            { "value": "funny" },
+            { "value": "asmr" }
+          ]
+        },
+        "fallbackOutput": ""
+      }
+    },
+    {
+      "id": "process-standard",
+      "name": "Process Standard TikTok",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1000, 160],
+      "parameters": {
+        "workflowId": 2,
+        "workflowType": "new",
+        "workflowParameters": {
+          "parameters": {
+            "values": [
+              { "name": "jobId", "value": "={{ $json.jobId }}" },
+              { "name": "inputPath", "value": "=/storage/videos/{{ $json.jobId }}_input.mp4" },
+              { "name": "outputPath", "value": "=/storage/output/{{ $json.jobId }}_final.mp4" },
+              { "name": "style", "value": "={{ $json.style }}" },
+              { "name": "includeCaptions", "value": "={{ $json.includeCaptions }}" },
+              { "name": "includeWatermark", "value": "={{ $json.includeWatermark }}" },
+              { "name": "backgroundMusic", "value": "={{ $json.backgroundMusic }}" },
+              { "name": "targetDuration", "value": "={{ $json.targetDuration }}" },
+              { "name": "script", "value": "={{ $json.script }}" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "process-educational",
+      "name": "Process Educational TikTok",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1000, 300],
+      "parameters": {
+        "workflowId": 2,
+        "workflowType": "new",
+        "workflowParameters": {
+          "parameters": {
+            "values": [
+              { "name": "jobId", "value": "={{ $json.jobId }}" },
+              { "name": "inputPath", "value": "=/storage/videos/{{ $json.jobId }}_input.mp4" },
+              { "name": "outputPath", "value": "=/storage/output/{{ $json.jobId }}_final.mp4" },
+              { "name": "style", "value": "educational" },
+              { "name": "includeCaptions", "value": "true" },
+              { "name": "includeWatermark", "value": "={{ $json.includeWatermark }}" },
+              { "name": "targetDuration", "value": "60" },
+              { "name": "script", "value": "={{ $json.script }}" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "process-funny",
+      "name": "Process Funny TikTok",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1000, 440],
+      "parameters": {
+        "workflowId": 2,
+        "workflowType": "new",
+        "workflowParameters": {
+          "parameters": {
+            "values": [
+              { "name": "jobId", "value": "={{ $json.jobId }}" },
+              { "name": "inputPath", "value": "=/storage/videos/{{ $json.jobId }}_input.mp4" },
+              { "name": "outputPath", "value": "=/storage/output/{{ $json.jobId }}_final.mp4" },
+              { "name": "style", "value": "funny" },
+              { "name": "speed", "value": "1.25" },
+              { "name": "includeWatermark", "value": "={{ $json.includeWatermark }}" },
+              { "name": "targetDuration", "value": "15" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "process-asmr",
+      "name": "Process ASMR TikTok",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1000, 580],
+      "parameters": {
+        "workflowId": 2,
+        "workflowType": "new",
+        "workflowParameters": {
+          "parameters": {
+            "values": [
+              { "name": "jobId", "value": "={{ $json.jobId }}" },
+              { "name": "inputPath", "value": "=/storage/videos/{{ $json.jobId }}_input.mp4" },
+              { "name": "outputPath", "value": "=/storage/output/{{ $json.jobId }}_final.mp4" },
+              { "name": "style", "value": "asmr" },
+              { "name": "backgroundMusic", "value": "lofi" },
+              { "name": "includeWatermark", "value": "={{ $json.includeWatermark }}" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "notify-complete",
+      "name": "Notify & Return Result",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1200, 400],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{ "node": "Trigger (Schedule / Webhook / Manual)", "type": "main", "index": 0 }]]
+    },
+    "Webhook Trigger": {
+      "main": [[{ "node": "Trigger (Schedule / Webhook / Manual)", "type": "main", "index": 1 }]]
+    },
+    "Manual Trigger": {
+      "main": [[{ "node": "Trigger (Schedule / Webhook / Manual)", "type": "main", "index": 2 }]]
+    },
+    "Trigger (Schedule / Webhook / Manual)": {
+      "main": [
+        [{ "node": "Validate & Prepare Payload", "type": "main", "index": 0 }],
+        [{ "node": "Validate & Prepare Payload", "type": "main", "index": 0 }],
+        [{ "node": "Validate & Prepare Payload", "type": "main", "index": 0 }]
+      ]
+    },
+    "Validate & Prepare Payload": {
+      "main": [[{ "node": "Check Content Source", "type": "main", "index": 0 }]]
+    },
+    "Check Content Source": {
+      "main": [
+        [{ "node": "Fetch Content from URL", "type": "main", "index": 0 }],
+        [{ "node": "Execute Sub-Pipeline", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Content from URL": {
+      "main": [[{ "node": "Execute Sub-Pipeline", "type": "main", "index": 0 }]]
+    },
+    "Execute Sub-Pipeline": {
+      "main": [
+        [{ "node": "Process Standard TikTok", "type": "main", "index": 0 }],
+        [{ "node": "Process Educational TikTok", "type": "main", "index": 0 }],
+        [{ "node": "Process Funny TikTok", "type": "main", "index": 0 }],
+        [{ "node": "Process ASMR TikTok", "type": "main", "index": 0 }],
+        [{ "node": "Notify & Return Result", "type": "main", "index": 0 }]
+      ]
+    },
+    "Process Standard TikTok": {
+      "main": [[{ "node": "Notify & Return Result", "type": "main", "index": 0 }]]
+    },
+    "Process Educational TikTok": {
+      "main": [[{ "node": "Notify & Return Result", "type": "main", "index": 0 }]]
+    },
+    "Process Funny TikTok": {
+      "main": [[{ "node": "Notify & Return Result", "type": "main", "index": 0 }]]
+    },
+    "Process ASMR TikTok": {
+      "main": [[{ "node": "Notify & Return Result", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "timezone": "America/New_York",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["tiktok", "orchestrator", "video"],
+  "active": false
+}

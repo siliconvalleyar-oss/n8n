@@ -1,0 +1,124 @@
+{
+  "name": "Asset Manager",
+  "nodes": [
+    {
+      "id": "wf-trigger",
+      "name": "Workflow Trigger",
+      "type": "n8n-nodes-base.workflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "parameters": {}
+    },
+    {
+      "id": "parse-params",
+      "name": "Parse Params",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [380, 300],
+      "parameters": {
+        "jsCode": "const p = $json;\nreturn {\n  action: p.action || 'download',\n  urls: p.urls || (p.url ? [p.url] : []),\n  jobId: p.jobId || `asset_${Date.now()}`,\n  category: p.category || 'videos',\n  filename: p.filename || null\n};"
+      }
+    },
+    {
+      "id": "switch-action",
+      "name": "Action Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [560, 300],
+      "parameters": {
+        "dataType": "string",
+        "fieldName": "action",
+        "switch": { "values": [
+          { "value": "download" },
+          { "value": "list" },
+          { "value": "cleanup" }
+        ]},
+        "fallbackOutput": ""
+      }
+    },
+    {
+      "id": "download",
+      "name": "Download via API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [760, 160],
+      "parameters": {
+        "method": "POST",
+        "url": "http://ffmpeg-api:3000/download",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "url", "value": "={{ $json.urls[0] }}" },
+            { "name": "output", "value": "=/storage/{{ $json.category }}/{{ $json.jobId }}.mp4" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "list",
+      "name": "List via API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [760, 340],
+      "parameters": {
+        "method": "POST",
+        "url": "http://ffmpeg-api:3000/shell",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "command", "value": "=ls -la /storage/{{ $json.category }}/ 2>/dev/null || echo 'empty'" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "cleanup",
+      "name": "Cleanup via API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [760, 500],
+      "parameters": {
+        "method": "POST",
+        "url": "http://ffmpeg-api:3000/shell",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "command", "value": "=find /storage/{{ $json.category }} -type f -mtime +7 -delete 2>/dev/null; echo 'cleaned'" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "return",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [760, 680],
+      "parameters": {
+        "jsCode": "return {\n  action: $json.action, jobId: $json.jobId,\n  category: $json.category,\n  completedAt: new Date().toISOString(),\n  result: $json\n};"
+      }
+    }
+  ],
+  "connections": {
+    "Workflow Trigger": { "main": [[{ "node": "Parse Params", "type": "main", "index": 0 }]] },
+    "Parse Params": { "main": [[{ "node": "Action Switch", "type": "main", "index": 0 }]] },
+    "Action Switch": {
+      "main": [
+        [{ "node": "Download via API", "type": "main", "index": 0 }],
+        [{ "node": "List via API", "type": "main", "index": 0 }],
+        [{ "node": "Cleanup via API", "type": "main", "index": 0 }],
+        [{ "node": "Return Result", "type": "main", "index": 0 }]
+      ]
+    },
+    "Download via API": { "main": [[{ "node": "Return Result", "type": "main", "index": 0 }]] },
+    "List via API": { "main": [[{ "node": "Return Result", "type": "main", "index": 0 }]] },
+    "Cleanup via API": { "main": [[{ "node": "Return Result", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "timezone": "UTC", "callerPolicy": "workflowsFromSameOwner", "executionOrder": "v1" },
+  "staticData": null,
+  "tags": ["assets", "download"],
+  "active": false
+}
