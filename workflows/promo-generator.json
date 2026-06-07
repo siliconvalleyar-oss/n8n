@@ -1,0 +1,99 @@
+{
+  "name": "Promo Video Generator",
+  "nodes": [
+    {
+      "id": "wf-trigger",
+      "name": "Workflow Trigger",
+      "type": "n8n-nodes-base.workflowTrigger",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "parameters": {}
+    },
+    {
+      "id": "parse",
+      "name": "Parse Params",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [380, 300],
+      "parameters": {
+        "jsCode": "const p = $json;\nreturn {\n  jobId: p.jobId || `promo_${Date.now()}`,\n  imagePath: p.imagePath || '/storage/assets/copo_de_nieve_01.jpeg',\n  voiceoverPath: p.voiceoverPath || '/storage/assets/copo_mieve.mp3',\n  bgmPath: p.bgmPath || '/storage/assets/reggae_2min.mp3',\n  logoPath: p.logoPath || '/storage/assets/grasas.png',\n  outputPath: p.outputPath || `/storage/output/promo_${Date.now()}.mp4`,\n  duration: p.duration || 6.5,\n  texts: p.texts || [\n    { text: 'compralo', start: 0, end: 1.5, color: 'white', size: 72 },\n    { text: 'oferta 50% off', start: 1.5, end: 3.0, color: 'yellow', size: 72 },\n    { text: 'for sale', start: 3.0, end: 4.5, color: 'white', size: 72 },\n    { text: 'Conseguilo en las cuevas', start: 4.5, end: 6.5, color: 'white', size: 52 }\n  ],\n  voiceVolume: p.voiceVolume ?? 1.5,\n  bgmVolume: p.bgmVolume ?? 0.2\n};"
+      }
+    },
+    {
+      "id": "call-promo",
+      "name": "Call Promo API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [580, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://ffmpeg-api:3000/promo",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "jobId", "value": "={{ $json.jobId }}" },
+            { "name": "imagePath", "value": "={{ $json.imagePath }}" },
+            { "name": "voiceoverPath", "value": "={{ $json.voiceoverPath }}" },
+            { "name": "bgmPath", "value": "={{ $json.bgmPath }}" },
+            { "name": "logoPath", "value": "={{ $json.logoPath }}" },
+            { "name": "outputPath", "value": "={{ $json.outputPath }}" },
+            { "name": "duration", "value": "={{ $json.duration }}" },
+            { "name": "voiceVolume", "value": "={{ $json.voiceVolume }}" },
+            { "name": "bgmVolume", "value": "={{ $json.bgmVolume }}" },
+            { "name": "texts", "value": "={{ $json.texts }}" }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "check",
+      "name": "Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [780, 300],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            { "value1": "={{ $json.success }}", "operation": "equal", "value2": true }
+          ]
+        }
+      }
+    },
+    {
+      "id": "return-ok",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [980, 200],
+      "parameters": {
+        "jsCode": "return {\n  success: true,\n  jobId: $json.jobId,\n  outputPath: $json.outputPath,\n  duration: $json.duration,\n  sizeBytes: $json.sizeBytes,\n  processedAt: new Date().toISOString()\n};"
+      }
+    },
+    {
+      "id": "return-err",
+      "name": "Return Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [980, 400],
+      "parameters": {
+        "jsCode": "return {\n  success: false,\n  jobId: $json.jobId,\n  error: $json.error,\n  processedAt: new Date().toISOString()\n};"
+      }
+    }
+  ],
+  "connections": {
+    "Workflow Trigger": { "main": [[{ "node": "Parse Params", "type": "main", "index": 0 }]] },
+    "Parse Params": { "main": [[{ "node": "Call Promo API", "type": "main", "index": 0 }]] },
+    "Call Promo API": { "main": [[{ "node": "Success?", "type": "main", "index": 0 }]] },
+    "Success?": {
+      "main": [
+        [{ "node": "Return Result", "type": "main", "index": 0 }],
+        [{ "node": "Return Error", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "timezone": "UTC", "callerPolicy": "workflowsFromSameOwner", "executionOrder": "v1" },
+  "staticData": null,
+  "tags": ["promo", "video", "skill"],
+  "active": false
+}

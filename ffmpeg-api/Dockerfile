@@ -1,6 +1,6 @@
 FROM node:18-alpine
 
-RUN apk add --no-cache ffmpeg curl
+RUN apk add --no-cache ffmpeg curl yt-dlp msttcorefonts-installer fontconfig ttf-dejavu && update-ms-fonts && fc-cache -f
 
 WORKDIR /app
 COPY package.json .

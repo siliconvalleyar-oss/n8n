@@ -170,15 +170,115 @@ app.post('/download', async (req, res) => {
   }
 });
 
+// Download video via yt-dlp (YouTube, TikTok, etc.)
+app.post('/ytdl', async (req, res) => {
+  try {
+    const { url, output } = req.body;
+    if (!url) return res.status(400).json({ error: 'url required' });
+    const out = output || `/storage/videos/ytdl_${Date.now()}.mp4`;
+    ensureDir(out);
+    execSync(`yt-dlp -f "bestvideo[height<=1080]+bestaudio/best[height<=1080]" -o "${out}" "${url}" 2>&1`, { timeout: 300000 });
+    const stats = fs.statSync(out);
+    res.json({ success: true, output: out, sizeBytes: stats.size });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Run a shell command
 app.post('/shell', async (req, res) => {
   try {
     const { command } = req.body;
     if (!command) return res.status(400).json({ error: 'command required' });
-    const stdout = execSync(command, { timeout: 30000, encoding: 'utf8' });
+    const stdout = execSync(command, { timeout: 120000, encoding: 'utf8' });
     res.json({ success: true, stdout });
   } catch (e) {
     res.status(500).json({ error: e.message, stderr: e.stderr?.toString() });
+  }
+});
+
+// Promo video: image zoom-out + text overlays + audio mix + logo
+app.post('/promo', async (req, res) => {
+  try {
+    const cfg = req.body;
+    const {
+      jobId = `promo_${Date.now()}`,
+      imagePath = '/storage/assets/copo_de_nieve_01.jpeg',
+      voiceoverPath = '/storage/assets/copo_mieve.mp3',
+      bgmPath = '/storage/assets/reggae_2min.mp3',
+      logoPath = '/storage/assets/grasas.png',
+      outputPath = `/storage/output/${jobId}.mp4`,
+      duration = 6.5,
+      texts = [
+        { text: 'compralo', start: 0, end: 1.5, color: 'white', size: 72 },
+        { text: 'oferta 50% off', start: 1.5, end: 3.0, color: 'yellow', size: 72 },
+        { text: 'for sale', start: 3.0, end: 4.5, color: 'white', size: 72 },
+        { text: 'Conseguilo en las cuevas', start: 4.5, end: 6.5, color: 'white', size: 52 }
+      ],
+      voiceVolume = 1.5,
+      bgmVolume = 0.2,
+      zoomStart = 1.4,
+      zoomEnd = 1.0,
+      fontFile = '/usr/share/fonts/truetype/msttcorefonts/Arial.ttf',
+      fps = 30
+    } = cfg;
+
+    ensureDir(outputPath);
+    const totalFrames = Math.round(duration * fps);
+
+    // Build drawtext filters for each text segment
+    let dtFilters = '';
+    let prevLabel = 'v1'; // after logo overlay
+    texts.forEach((t, i) => {
+      const fadeDur = 0.3;
+      const tStart = t.start;
+      const tEnd = t.end;
+      const label = `t${i}`;
+      const expr =
+        `[${prevLabel}]drawtext=` +
+        `text='${t.text}':` +
+        `fontfile=${fontFile}:` +
+        `fontsize=${t.size}:` +
+        `fontcolor=${t.color}:` +
+        `borderw=3:bordercolor=black:` +
+        `x=(w-text_w)/2:y=h*0.25:` +
+        `enable='between(t,${tStart},${tEnd})':` +
+        `alpha='min(1,min((t-${tStart})/${fadeDur},(${tEnd}-t)/${fadeDur}))'` +
+        `[${label}];`;
+      dtFilters += expr;
+      prevLabel = label;
+    });
+
+    const filterComplex =
+      `[0:v]zoompan=z='min(${zoomStart},${zoomStart}-(${zoomStart}-${zoomEnd})*on/${totalFrames})':` +
+      `d=${totalFrames}:s=1080x1920:fps=${fps}[v0];` +
+      `[v0][3:v]overlay=W-w-30:H-h-30:format=auto,format=yuv420p[v1];` +
+      dtFilters +
+      `[1:a]volume=${voiceVolume}[voice];` +
+      `[2:a]volume=${bgmVolume}[bgm];` +
+      `[voice][bgm]amix=inputs=2:duration=first[aout]`;
+
+    await run([
+      '-y',
+      '-loop', '1', '-t', String(duration),
+      '-i', imagePath,
+      '-i', voiceoverPath,
+      '-i', bgmPath,
+      '-i', logoPath,
+      '-filter_complex', filterComplex,
+      '-map', `[${prevLabel}]`, '-map', '[aout]',
+      '-t', String(duration),
+      '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-movflags', '+faststart',
+      outputPath
+    ]);
+
+    const stats = fs.statSync(outputPath);
+    res.json({ success: true, jobId, outputPath, duration, sizeBytes: stats.size });
+  } catch (e) {
+    console.error(`[ffmpeg-api] promo error: ${e.message}`);
+    res.status(500).json({ error: e.message });
   }
 });
 
